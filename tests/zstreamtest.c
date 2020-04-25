@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
+ * Copyright (c) 2016-2020, Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -509,6 +509,33 @@ static int basicUnitTests(U32 seed, double compressibility)
     }
     DISPLAYLEVEL(3, "OK \n");
 
+    DISPLAYLEVEL(3, "test%3i : NULL buffers : ", testNb++);
+    inBuff.src = NULL;
+    inBuff.size = 0;
+    inBuff.pos = 0;
+    outBuff.dst = NULL;
+    outBuff.size = 0;
+    outBuff.pos = 0;
+    CHECK_Z( ZSTD_compressStream(zc, &outBuff, &inBuff) );
+    CHECK(inBuff.pos != inBuff.size, "Entire input should be consumed");
+    CHECK_Z( ZSTD_endStream(zc, &outBuff) );
+    outBuff.dst = (char*)(compressedBuffer);
+    outBuff.size = compressedBufferSize;
+    outBuff.pos = 0;
+    {   size_t const r = ZSTD_endStream(zc, &outBuff);
+        CHECK(r != 0, "Error or some data not flushed (ret=%zu)", r);
+    }
+    inBuff.src = outBuff.dst;
+    inBuff.size = outBuff.pos;
+    inBuff.pos = 0;
+    outBuff.dst = NULL;
+    outBuff.size = 0;
+    outBuff.pos = 0;
+    CHECK_Z( ZSTD_initDStream(zd) );
+    {   size_t const ret = ZSTD_decompressStream(zd, &outBuff, &inBuff);
+        if (ret != 0) goto _output_error;
+    }
+    DISPLAYLEVEL(3, "OK\n");
     /* _srcSize compression test */
     DISPLAYLEVEL(3, "test%3i : compress_srcSize %u bytes : ", testNb++, COMPRESSIBLE_NOISE_LENGTH);
     CHECK_Z( ZSTD_initCStream_srcSize(zc, 1, CNBufferSize) );
@@ -1243,6 +1270,43 @@ static int basicUnitTests(U32 seed, double compressibility)
               "Decompressed data does not match");
 
         ZSTD_freeDStream(zds);
+    }
+    DISPLAYLEVEL(3, "OK \n");
+
+    DISPLAYLEVEL(3, "test%3i : raw block can be streamed: ", testNb++);
+    {   size_t const inputSize = 10000;
+        size_t const compCapacity = ZSTD_compressBound(inputSize);
+        BYTE* const input = (BYTE*)malloc(inputSize);
+        BYTE* const comp = (BYTE*)malloc(compCapacity);
+        BYTE* const decomp = (BYTE*)malloc(inputSize);
+
+        CHECK(input == NULL || comp == NULL || decomp == NULL, "failed to alloc buffers");
+
+        RDG_genBuffer(input, inputSize, 0.0, 0.0, seed);
+        {   size_t const compSize = ZSTD_compress(comp, compCapacity, input, inputSize, -(int)inputSize);
+            ZSTD_inBuffer in = { comp, 0, 0 };
+            ZSTD_outBuffer out = { decomp, 0, 0 };
+            CHECK_Z(compSize);
+            CHECK_Z( ZSTD_DCtx_reset(zd, ZSTD_reset_session_and_parameters) );
+            while (in.size < compSize) {
+                in.size = MIN(in.size + 100, compSize);
+                while (in.pos < in.size) {
+                    size_t const outPos = out.pos;
+                    if (out.pos == out.size) {
+                        out.size = MIN(out.size + 10, inputSize);
+                    }
+                    CHECK_Z( ZSTD_decompressStream(zd, &out, &in) );
+                    CHECK(!(out.pos > outPos), "We are not streaming (no output generated)");
+                }
+            }
+            CHECK(in.pos != compSize, "Not all input consumed!");
+            CHECK(out.pos != inputSize, "Not all output produced!");
+        }
+        CHECK(memcmp(input, decomp, inputSize), "round trip failed!");
+
+        free(input);
+        free(comp);
+        free(decomp);
     }
     DISPLAYLEVEL(3, "OK \n");
 

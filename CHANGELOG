@@ -1,3 +1,12 @@
+v1.4.5
+fix : Compression ratio regression on huge files (> 3 GB) using high levels (--ultra) and multithreading, by @terrelln
+perf: Improved decompression speed: x64 : +10% (clang) / +5% (gcc); ARM : from +15% to +50%, depending on chip, by @terrelln
+cli: new command --filelist=FILE : provide list of files within a file, by @AhmedAbdellah19
+cli: new command --patch-from=FILE (experimental) : generate diff from 2 files, by @bimbashrestha
+api: controlled block size for lower latency, new experimental parameter by @ephiepark
+build: mingw cross-compilation from unix, by @Ericson2314
+misc: bitflip analyzer tool, by @felixhandte
+
 v1.4.4
 perf: Improved decompression speed, by > 10%, by @terrelln
 perf: Better compression speed when re-using a context, by @felixhandte
@@ -14,7 +23,8 @@ cli: commands --stream-size=# and --size-hint=#, by @nmagerko
 cli: command --exclude-compressed, by @shashank0791
 cli: faster `-t` test mode
 cli: improved some error messages, by @vangyzen
-cli: rare deadlock condition within dictionary builder, by @terrelln
+cli: fix command `-D dictionary` on Windows, reported by @artyompetrov
+cli: fix rare deadlock condition within dictionary builder, by @terrelln
 build: single-file decoder with emscripten compilation script, by @cwoffenden
 build: fixed zlibWrapper compilation on Visual Studio, reported by @bluenlive
 build: fixed deprecation warning for certain gcc version, reported by @jasonma163

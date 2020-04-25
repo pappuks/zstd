@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
+ * Copyright (c) 2016-2020, Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -660,7 +660,7 @@ ZSTD_compressBlock_lazy_generic(
     const U32 dictIndexDelta       = dictMode == ZSTD_dictMatchState ?
                                      prefixLowestIndex - (U32)(dictEnd - dictBase) :
                                      0;
-    const U32 dictAndPrefixLength = (U32)(ip - prefixLowest + dictEnd - dictLowest);
+    const U32 dictAndPrefixLength = (U32)((ip - prefixLowest) + (dictEnd - dictLowest));
 
     /* init */
     ip += (dictAndPrefixLength == 0);

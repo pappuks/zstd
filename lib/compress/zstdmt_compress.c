@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
+ * Copyright (c) 2016-2020, Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -461,7 +461,9 @@ typedef struct {
     ZSTD_window_t ldmWindow;  /* A thread-safe copy of ldmState.window */
 } serialState_t;
 
-static int ZSTDMT_serialState_reset(serialState_t* serialState, ZSTDMT_seqPool* seqPool, ZSTD_CCtx_params params, size_t jobSize)
+static int ZSTDMT_serialState_reset(serialState_t* serialState, 
+                        ZSTDMT_seqPool* seqPool, ZSTD_CCtx_params params, 
+                        size_t jobSize, const void* dict, size_t const dictSize)
 {
     /* Adjust parameters */
     if (params.ldmParams.enableLdm) {
@@ -490,7 +492,7 @@ static int ZSTDMT_serialState_reset(serialState_t* serialState, ZSTDMT_seqPool* 
         /* Size the seq pool tables */
         ZSTDMT_setNbSeq(seqPool, ZSTD_ldm_getMaxNbSeq(params.ldmParams, jobSize));
         /* Reset the window */
-        ZSTD_window_clear(&serialState->ldmState.window);
+        ZSTD_window_init(&serialState->ldmState.window);
         serialState->ldmWindow = serialState->ldmState.window;
         /* Resize tables and output space if necessary. */
         if (serialState->ldmState.hashTable == NULL || serialState->params.ldmParams.hashLog < hashLog) {
@@ -507,6 +509,13 @@ static int ZSTDMT_serialState_reset(serialState_t* serialState, ZSTDMT_seqPool* 
         memset(serialState->ldmState.hashTable, 0, hashSize);
         memset(serialState->ldmState.bucketOffsets, 0, bucketSize);
     }
+
+    /* Update window state and fill hash table with dict */
+    if (params.ldmParams.enableLdm && dict) {
+        ZSTD_window_update(&serialState->ldmState.window, dict, dictSize);
+        ZSTD_ldm_fillHashTable(&serialState->ldmState, (const BYTE*)dict, (const BYTE*)dict + dictSize, &params.ldmParams);
+    }
+
     serialState->params = params;
     serialState->params.jobSize = (U32)jobSize;
     return 0;
@@ -1267,7 +1276,7 @@ static size_t ZSTDMT_compress_advanced_internal(
 
     assert(avgJobSize >= 256 KB);  /* condition for ZSTD_compressBound(A) + ZSTD_compressBound(B) <= ZSTD_compressBound(A+B), required to compress directly into Dst (no additional buffer) */
     ZSTDMT_setBufferSize(mtctx->bufPool, ZSTD_compressBound(avgJobSize) );
-    if (ZSTDMT_serialState_reset(&mtctx->serial, mtctx->seqPool, params, avgJobSize))
+    if (ZSTDMT_serialState_reset(&mtctx->serial, mtctx->seqPool, params, avgJobSize, NULL, 0))
         return ERROR(memory_allocation);
 
     FORWARD_IF_ERROR( ZSTDMT_expandJobsTable(mtctx, nbJobs) );  /* only expands if necessary */
@@ -1500,7 +1509,7 @@ size_t ZSTDMT_initCStream_internal(
     mtctx->allJobsCompleted = 0;
     mtctx->consumed = 0;
     mtctx->produced = 0;
-    if (ZSTDMT_serialState_reset(&mtctx->serial, mtctx->seqPool, params, mtctx->targetSectionSize))
+    if (ZSTDMT_serialState_reset(&mtctx->serial, mtctx->seqPool, params, mtctx->targetSectionSize, dict, dictSize))
         return ERROR(memory_allocation);
     return 0;
 }
@@ -1714,9 +1723,11 @@ static size_t ZSTDMT_flushProduced(ZSTDMT_CCtx* mtctx, ZSTD_outBuffer* output, u
             assert(mtctx->doneJobID < mtctx->nextJobID);
             assert(cSize >= mtctx->jobs[wJobID].dstFlushed);
             assert(mtctx->jobs[wJobID].dstBuff.start != NULL);
-            memcpy((char*)output->dst + output->pos,
-                   (const char*)mtctx->jobs[wJobID].dstBuff.start + mtctx->jobs[wJobID].dstFlushed,
-                   toFlush);
+            if (toFlush > 0) {
+                memcpy((char*)output->dst + output->pos,
+                    (const char*)mtctx->jobs[wJobID].dstBuff.start + mtctx->jobs[wJobID].dstFlushed,
+                    toFlush);
+            }
             output->pos += toFlush;
             mtctx->jobs[wJobID].dstFlushed += toFlush;  /* can write : this value is only used by mtctx */
 
@@ -1786,7 +1797,7 @@ static int ZSTDMT_isOverlapped(buffer_t buffer, range_t range)
     BYTE const* const bufferStart = (BYTE const*)buffer.start;
     BYTE const* const bufferEnd = bufferStart + buffer.capacity;
     BYTE const* const rangeStart = (BYTE const*)range.start;
-    BYTE const* const rangeEnd = rangeStart + range.size;
+    BYTE const* const rangeEnd = range.size != 0 ? rangeStart + range.size : rangeStart;
 
     if (rangeStart == NULL || bufferStart == NULL)
         return 0;

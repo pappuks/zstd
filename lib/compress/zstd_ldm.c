@@ -1,10 +1,11 @@
 /*
- * Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
+ * Copyright (c) 2016-2020, Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
  * LICENSE file in the root directory of this source tree) and the GPLv2 (found
  * in the COPYING file in the root directory of this source tree).
+ * You may select, at your option, one of the above-listed licenses.
  */
 
 #include "zstd_ldm.h"
@@ -221,6 +222,17 @@ static U64 ZSTD_ldm_fillLdmHashTable(ldmState_t* state,
         ++cur;
     }
     return rollingHash;
+}
+
+void ZSTD_ldm_fillHashTable(
+            ldmState_t* state, const BYTE* ip,
+            const BYTE* iend, ldmParams_t const* params)
+{
+    U64 startingHash = ZSTD_rollingHash_compute(ip, params->minMatchLength);
+    ZSTD_ldm_fillLdmHashTable(
+        state, startingHash, ip, iend - params->minMatchLength, state->window.base,
+        params->hashLog - params->bucketSizeLog,
+        *params);
 }
 
 
@@ -458,7 +470,7 @@ size_t ZSTD_ldm_generateSequences(
          *       * Try invalidation after the sequence generation and test the
          *         the offset against maxDist directly.
          */
-        ZSTD_window_enforceMaxDist(&ldmState->window, chunkEnd, maxDist, NULL, NULL);
+        ZSTD_window_enforceMaxDist(&ldmState->window, chunkEnd, maxDist, &ldmState->loadedDictEnd, NULL);
         /* 3. Generate the sequences for the chunk, and get newLeftoverSize. */
         newLeftoverSize = ZSTD_ldm_generateSequences_internal(
             ldmState, sequences, params, chunkStart, chunkSize);
@@ -566,7 +578,6 @@ size_t ZSTD_ldm_blockCompress(rawSeqStore_t* rawSeqStore,
         if (sequence.offset == 0)
             break;
 
-        assert(sequence.offset <= (1U << cParams->windowLog));
         assert(ip + sequence.litLength + sequence.matchLength <= iend);
 
         /* Fill tables for block compressor */

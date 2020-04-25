@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
+ * Copyright (c) 2016-2020, Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -128,6 +128,8 @@ static const size_t ZSTD_did_fieldSize[4] = { 0, 1, 2, 4 };
 static const size_t ZSTD_blockHeaderSize = ZSTD_BLOCKHEADERSIZE;
 typedef enum { bt_raw, bt_rle, bt_compressed, bt_reserved } blockType_e;
 
+#define ZSTD_FRAMECHECKSUMSIZE 4
+
 #define MIN_SEQUENCES_SIZE 1 /* nbSeq==0 */
 #define MIN_CBLOCK_SIZE (1 /*litCSize*/ + 1 /* RLE or RAW */ + MIN_SEQUENCES_SIZE /* nbSeq==0 */)   /* for a non-null block */
 
@@ -213,7 +215,7 @@ typedef enum {
  *         - ZSTD_overlap_src_before_dst: The src and dst may overlap, but they MUST be at least 8 bytes apart.
  *           The src buffer must be before the dst buffer.
  */
-MEM_STATIC FORCE_INLINE_ATTR DONT_VECTORIZE
+MEM_STATIC FORCE_INLINE_ATTR 
 void ZSTD_wildcopy(void* dst, const void* src, ptrdiff_t length, ZSTD_overlap_e const ovtype)
 {
     ptrdiff_t diff = (BYTE*)dst - (const BYTE*)src;
@@ -230,13 +232,12 @@ void ZSTD_wildcopy(void* dst, const void* src, ptrdiff_t length, ZSTD_overlap_e 
         } while (op < oend);
     } else {
         assert(diff >= WILDCOPY_VECLEN || diff <= -WILDCOPY_VECLEN);
-        /* Separate out the first two COPY16() calls because the copy length is
+        /* Separate out the first COPY16() call because the copy length is
          * almost certain to be short, so the branches have different
-         * probabilities.
-         * On gcc-9 unrolling once is +1.6%, twice is +2%, thrice is +1.8%.
-         * On clang-8 unrolling once is +1.4%, twice is +3.3%, thrice is +3%.
+         * probabilities. Since it is almost certain to be short, only do
+	 * one COPY16() in the first call. Then, do two calls per loop since
+	 * at that point it is more likely to have a high trip count.
          */
-        COPY16(op, ip);
         COPY16(op, ip);
         if (op >= oend) return;
         do {
@@ -246,6 +247,25 @@ void ZSTD_wildcopy(void* dst, const void* src, ptrdiff_t length, ZSTD_overlap_e 
         while (op < oend);
     }
 }
+
+MEM_STATIC size_t ZSTD_limitCopy(void* dst, size_t dstCapacity, const void* src, size_t srcSize)
+{
+    size_t const length = MIN(dstCapacity, srcSize);
+    if (length > 0) {
+        memcpy(dst, src, length);
+    }
+    return length;
+}
+
+/* define "workspace is too large" as this number of times larger than needed */
+#define ZSTD_WORKSPACETOOLARGE_FACTOR 3
+
+/* when workspace is continuously too large
+ * during at least this number of times,
+ * context's memory usage is considered wasteful,
+ * because it's sized to handle a worst case scenario which rarely happens.
+ * In which case, resize it down to free some memory */
+#define ZSTD_WORKSPACETOOLARGE_MAXDURATION 128
 
 
 /*-*******************************************
@@ -297,8 +317,7 @@ MEM_STATIC U32 ZSTD_highbit32(U32 val)   /* compress, dictBuilder, decodeCorpus 
     {
 #   if defined(_MSC_VER)   /* Visual */
         unsigned long r=0;
-        _BitScanReverse(&r, val);
-        return (unsigned)r;
+        return _BitScanReverse(&r, val) ? (unsigned)r : 0;
 #   elif defined(__GNUC__) && (__GNUC__ >= 3)   /* GCC Intrinsic */
         return __builtin_clz (val) ^ 31;
 #   elif defined(__ICCARM__)    /* IAR Intrinsic */

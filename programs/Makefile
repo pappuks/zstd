@@ -1,10 +1,11 @@
 # ################################################################
-# Copyright (c) 2015-present, Yann Collet, Facebook, Inc.
+# Copyright (c) 2015-2020, Yann Collet, Facebook, Inc.
 # All rights reserved.
 #
 # This source code is licensed under both the BSD-style license (found in the
 # LICENSE file in the root directory of this source tree) and the GPLv2 (found
 # in the COPYING file in the root directory of this source tree).
+# You may select, at your option, one of the above-listed licenses.
 # ##########################################################################
 # zstd : Command Line Utility, supporting gzip-like arguments
 # zstd32 : Same as zstd, but forced to compile in 32-bits mode
@@ -94,9 +95,12 @@ endif
 
 VOID = /dev/null
 
+# Make 4.3 doesn't support '\#' anymore (https://lwn.net/Articles/810071/)
+NUM_SYMBOL := \#
+
 # thread detection
 NO_THREAD_MSG := ==> no threads, building without multithreading support
-HAVE_PTHREAD := $(shell printf '\#include <pthread.h>\nint main(void) { return 0; }' > have_pthread.c && $(CC) $(FLAGS) -o have_pthread$(EXT) have_pthread.c -pthread 2> $(VOID) && rm have_pthread$(EXT) && echo 1 || echo 0; rm have_pthread.c)
+HAVE_PTHREAD := $(shell printf '$(NUM_SYMBOL)include <pthread.h>\nint main(void) { return 0; }' > have_pthread.c && $(CC) $(FLAGS) -o have_pthread$(EXT) have_pthread.c -pthread 2> $(VOID) && rm have_pthread$(EXT) && echo 1 || echo 0; rm have_pthread.c)
 HAVE_THREAD := $(shell [ "$(HAVE_PTHREAD)" -eq "1" -o -n "$(filter Windows%,$(OS))" ] && echo 1 || echo 0)
 ifeq ($(HAVE_THREAD), 1)
 THREAD_MSG := ==> building with threading support
@@ -108,7 +112,7 @@ endif
 
 # zlib detection
 NO_ZLIB_MSG := ==> no zlib, building zstd without .gz support
-HAVE_ZLIB := $(shell printf '\#include <zlib.h>\nint main(void) { return 0; }' > have_zlib.c && $(CC) $(FLAGS) -o have_zlib$(EXT) have_zlib.c -lz 2> $(VOID) && rm have_zlib$(EXT) && echo 1 || echo 0; rm have_zlib.c)
+HAVE_ZLIB := $(shell printf '$(NUM_SYMBOL)include <zlib.h>\nint main(void) { return 0; }' > have_zlib.c && $(CC) $(FLAGS) -o have_zlib$(EXT) have_zlib.c -lz 2> $(VOID) && rm have_zlib$(EXT) && echo 1 || echo 0; rm have_zlib.c)
 ifeq ($(HAVE_ZLIB), 1)
 ZLIB_MSG := ==> building zstd with .gz compression support
 ZLIBCPP = -DZSTD_GZCOMPRESS -DZSTD_GZDECOMPRESS
@@ -119,7 +123,7 @@ endif
 
 # lzma detection
 NO_LZMA_MSG := ==> no liblzma, building zstd without .xz/.lzma support
-HAVE_LZMA := $(shell printf '\#include <lzma.h>\nint main(void) { return 0; }' > have_lzma.c && $(CC) $(FLAGS) -o have_lzma$(EXT) have_lzma.c -llzma 2> $(VOID) && rm have_lzma$(EXT) && echo 1 || echo 0; rm have_lzma.c)
+HAVE_LZMA := $(shell printf '$(NUM_SYMBOL)include <lzma.h>\nint main(void) { return 0; }' > have_lzma.c && $(CC) $(FLAGS) -o have_lzma$(EXT) have_lzma.c -llzma 2> $(VOID) && rm have_lzma$(EXT) && echo 1 || echo 0; rm have_lzma.c)
 ifeq ($(HAVE_LZMA), 1)
 LZMA_MSG := ==> building zstd with .xz/.lzma compression support
 LZMACPP = -DZSTD_LZMACOMPRESS -DZSTD_LZMADECOMPRESS
@@ -130,7 +134,7 @@ endif
 
 # lz4 detection
 NO_LZ4_MSG := ==> no liblz4, building zstd without .lz4 support
-HAVE_LZ4 := $(shell printf '\#include <lz4frame.h>\n\#include <lz4.h>\nint main(void) { return 0; }' > have_lz4.c && $(CC) $(FLAGS) -o have_lz4$(EXT) have_lz4.c -llz4 2> $(VOID) && rm have_lz4$(EXT) && echo 1 || echo 0; rm have_lz4.c)
+HAVE_LZ4 := $(shell printf '$(NUM_SYMBOL)include <lz4frame.h>\n$(NUM_SYMBOL)include <lz4.h>\nint main(void) { return 0; }' > have_lz4.c && $(CC) $(FLAGS) -o have_lz4$(EXT) have_lz4.c -llz4 2> $(VOID) && rm have_lz4$(EXT) && echo 1 || echo 0; rm have_lz4.c)
 ifeq ($(HAVE_LZ4), 1)
 LZ4_MSG := ==> building zstd with .lz4 compression support
 LZ4CPP = -DZSTD_LZ4COMPRESS -DZSTD_LZ4DECOMPRESS
@@ -165,15 +169,15 @@ $(ZSTDDECOMP_O): CFLAGS += $(ALIGN_LOOP)
 zstd : CPPFLAGS += $(THREAD_CPP) $(ZLIBCPP) $(LZMACPP) $(LZ4CPP)
 zstd : LDFLAGS += $(THREAD_LD) $(ZLIBLD) $(LZMALD) $(LZ4LD) $(DEBUGFLAGS_LD)
 zstd : CPPFLAGS += -DZSTD_LEGACY_SUPPORT=$(ZSTD_LEGACY_SUPPORT)
+ifneq (,$(filter Windows%,$(OS)))
+zstd : $(RES_FILE)
+endif
 zstd : $(ZSTDLIB_FILES) zstdcli.o util.o timefn.o fileio.o benchfn.o benchzstd.o datagen.o dibio.o
 	@echo "$(THREAD_MSG)"
 	@echo "$(ZLIB_MSG)"
 	@echo "$(LZMA_MSG)"
 	@echo "$(LZ4_MSG)"
-ifneq (,$(filter Windows%,$(OS)))
-	windres/generate_res.bat
-endif
-	$(CC) $(FLAGS) $^ $(RES_FILE) -o $@$(EXT) $(LDFLAGS)
+	$(CC) $(FLAGS) $^ -o $@$(EXT) $(LDFLAGS)
 
 .PHONY: zstd-release
 zstd-release: DEBUGFLAGS := -DBACKTRACE_ENABLE=0
@@ -183,11 +187,11 @@ zstd-release: zstd
 zstd32 : CPPFLAGS += $(THREAD_CPP)
 zstd32 : LDFLAGS  += $(THREAD_LD)
 zstd32 : CPPFLAGS += -DZSTD_LEGACY_SUPPORT=$(ZSTD_LEGACY_SUPPORT)
-zstd32 : $(ZSTDLIB_FILES) zstdcli.c util.c timefn.c fileio.c benchfn.c benchzstd.c datagen.c dibio.c
 ifneq (,$(filter Windows%,$(OS)))
-	windres/generate_res.bat
+zstd32 : $(RES32_FILE)
 endif
-	$(CC) -m32 $(FLAGS) $^ $(RES32_FILE) -o $@$(EXT)
+zstd32 : $(ZSTDLIB_FILES) zstdcli.c util.c timefn.c fileio.c benchfn.c benchzstd.c datagen.c dibio.c
+	$(CC) -m32 $(FLAGS) $^ -o $@$(EXT)
 
 zstd-nolegacy : $(ZSTD_FILES) $(ZDICT_FILES) zstdcli.o util.o fileio.c benchfn.o benchzstd.o timefn.o datagen.o dibio.o
 	$(CC) $(FLAGS) $^ -o $@$(EXT) $(LDFLAGS)
@@ -239,8 +243,16 @@ zstdmt: zstd
 	ln -sf zstd zstdmt
 
 .PHONY: generate_res
-generate_res:
-	windres/generate_res.bat
+generate_res: $(RES64_FILE) $(RES32_FILE)
+
+ifneq (,$(filter Windows%,$(OS)))
+RC ?= windres
+# http://stackoverflow.com/questions/708238/how-do-i-add-an-icon-to-a-mingw-gcc-compiled-executable
+$(RES64_FILE): windres/zstd.rc
+	$(RC) -o $@ -I ../lib -I windres -i $< -O coff -F pe-x86-64
+$(RES32_FILE): windres/zstd.rc
+	$(RC) -o $@ -I ../lib -I windres -i $< -O coff -F pe-i386
+endif
 
 .PHONY: clean
 clean:
@@ -346,10 +358,10 @@ INSTALL_MAN     ?= $(INSTALL_DATA)
 install: zstd
 	@echo Installing binaries
 	@$(INSTALL) -d -m 755 $(DESTDIR)$(BINDIR)/ $(DESTDIR)$(MAN1DIR)/
-	@$(INSTALL_PROGRAM) zstd $(DESTDIR)$(BINDIR)/zstd
-	@ln -sf zstd $(DESTDIR)$(BINDIR)/zstdcat
-	@ln -sf zstd $(DESTDIR)$(BINDIR)/unzstd
-	@ln -sf zstd $(DESTDIR)$(BINDIR)/zstdmt
+	@$(INSTALL_PROGRAM) zstd$(EXT) $(DESTDIR)$(BINDIR)/zstd$(EXT)
+	@ln -sf zstd$(EXT) $(DESTDIR)$(BINDIR)/zstdcat$(EXT)
+	@ln -sf zstd$(EXT) $(DESTDIR)$(BINDIR)/unzstd$(EXT)
+	@ln -sf zstd$(EXT) $(DESTDIR)$(BINDIR)/zstdmt$(EXT)
 	@$(INSTALL_SCRIPT) zstdless $(DESTDIR)$(BINDIR)/zstdless
 	@$(INSTALL_SCRIPT) zstdgrep $(DESTDIR)$(BINDIR)/zstdgrep
 	@echo Installing man pages

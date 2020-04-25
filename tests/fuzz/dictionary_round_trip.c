@@ -1,10 +1,11 @@
 /*
- * Copyright (c) 2016-present, Facebook, Inc.
+ * Copyright (c) 2016-2020, Facebook, Inc.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
  * LICENSE file in the root directory of this source tree) and the GPLv2 (found
  * in the COPYING file in the root directory of this source tree).
+ * You may select, at your option, one of the above-listed licenses.
  */
 
 /**
@@ -31,6 +32,7 @@ static size_t roundTripTest(void *result, size_t resultCapacity,
 {
     ZSTD_dictContentType_e dictContentType = ZSTD_dct_auto;
     FUZZ_dict_t dict = FUZZ_train(src, srcSize, producer);
+    int const refPrefix = FUZZ_dataProducer_uint32Range(producer, 0, 1) != 0;
     size_t cSize;
     if (FUZZ_dataProducer_uint32Range(producer, 0, 15) == 0) {
         int const cLevel = FUZZ_dataProducer_int32Range(producer, kMinClevel, kMaxClevel);
@@ -45,17 +47,27 @@ static size_t roundTripTest(void *result, size_t resultCapacity,
         FUZZ_setRandomParameters(cctx, srcSize, producer);
         /* Disable checksum so we can use sizes smaller than compress bound. */
         FUZZ_ZASSERT(ZSTD_CCtx_setParameter(cctx, ZSTD_c_checksumFlag, 0));
-        FUZZ_ZASSERT(ZSTD_CCtx_loadDictionary_advanced(
+        if (refPrefix)
+            FUZZ_ZASSERT(ZSTD_CCtx_refPrefix_advanced(
+                cctx, dict.buff, dict.size,
+                dictContentType));
+        else 
+            FUZZ_ZASSERT(ZSTD_CCtx_loadDictionary_advanced(
                 cctx, dict.buff, dict.size,
                 (ZSTD_dictLoadMethod_e)FUZZ_dataProducer_uint32Range(producer, 0, 1),
                 dictContentType));
         cSize = ZSTD_compress2(cctx, compressed, compressedCapacity, src, srcSize);
     }
     FUZZ_ZASSERT(cSize);
-    FUZZ_ZASSERT(ZSTD_DCtx_loadDictionary_advanced(
-        dctx, dict.buff, dict.size,
-        (ZSTD_dictLoadMethod_e)FUZZ_dataProducer_uint32Range(producer, 0, 1),
-        dictContentType));
+    if (refPrefix)
+        FUZZ_ZASSERT(ZSTD_DCtx_refPrefix_advanced(
+            dctx, dict.buff, dict.size,
+            dictContentType));
+    else
+        FUZZ_ZASSERT(ZSTD_DCtx_loadDictionary_advanced(
+            dctx, dict.buff, dict.size,
+            (ZSTD_dictLoadMethod_e)FUZZ_dataProducer_uint32Range(producer, 0, 1),
+            dictContentType));
     {
         size_t const ret = ZSTD_decompressDCtx(
                 dctx, result, resultCapacity, compressed, cSize);

@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2016-present, Yann Collet, Facebook, Inc.
+ * Copyright (c) 2016-2020, Yann Collet, Facebook, Inc.
  * All rights reserved.
  *
  * This source code is licensed under both the BSD-style license (found in the
@@ -80,6 +80,13 @@ ZSTD_compressBlock_fast_generic(
     }
 
     /* Main Search Loop */
+#ifdef __INTEL_COMPILER
+    /* From intel 'The vector pragma indicates that the loop should be 
+     * vectorized if it is legal to do so'. Can be used together with 
+     * #pragma ivdep (but have opted to exclude that because intel 
+     * warns against using it).*/
+    #pragma vector always
+#endif
     while (ip1 < ilimit) {   /* < instead of <=, because check at ip0+2 */
         size_t mLength;
         BYTE const* ip2 = ip0 + 2;
@@ -95,6 +102,11 @@ ZSTD_compressBlock_fast_generic(
         const BYTE* match0 = base + matchIndex0;
         const BYTE* match1 = base + matchIndex1;
         U32 offcode;
+
+#if defined(__aarch64__)
+        PREFETCH_L1(ip0+256);
+#endif
+
         hashTable[h0] = current0;   /* update hash table */
         hashTable[h1] = current1;   /* update hash table */
 
