@@ -13,7 +13,7 @@
 #define FILEIO_H_23981798732
 
 #define ZSTD_STATIC_LINKING_ONLY   /* ZSTD_compressionParameters */
-#include "zstd.h"                  /* ZSTD_* */
+#include "../lib/zstd.h"           /* ZSTD_* */
 
 #if defined (__cplusplus)
 extern "C" {
@@ -96,6 +96,8 @@ void FIO_setNotificationLevel(int level);
 void FIO_setExcludeCompressedFile(FIO_prefs_t* const prefs, int excludeCompressedFiles);
 void FIO_setPatchFromMode(FIO_prefs_t* const prefs, int value);
 void FIO_setContentSize(FIO_prefs_t* const prefs, int value);
+void FIO_setNbFiles(FIO_prefs_t* const prefs, int value);
+void FIO_setCurrFileIdx(FIO_prefs_t* const prefs, int value);
 
 /*-*************************************
 *  Single File functions
@@ -121,7 +123,8 @@ int FIO_listMultipleFiles(unsigned numFiles, const char** filenameTable, int dis
 /** FIO_compressMultipleFilenames() :
  * @return : nb of missing files */
 int FIO_compressMultipleFilenames(FIO_prefs_t* const prefs,
-                                  const char** inFileNamesTable, unsigned nbFiles,
+                                  const char** inFileNamesTable,
+                                  const char* outMirroredDirName,
                                   const char* outDirName,
                                   const char* outFileName, const char* suffix,
                                   const char* dictFileName, int compressionLevel,
@@ -130,7 +133,8 @@ int FIO_compressMultipleFilenames(FIO_prefs_t* const prefs,
 /** FIO_decompressMultipleFilenames() :
  * @return : nb of missing or skipped files */
 int FIO_decompressMultipleFilenames(FIO_prefs_t* const prefs,
-                                    const char** srcNamesTable, unsigned nbFiles,
+                                    const char** srcNamesTable,
+                                    const char* outMirroredDirName,
                                     const char* outDirName,
                                     const char* outFileName,
                                     const char* dictFileName);

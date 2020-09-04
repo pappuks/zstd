@@ -16,9 +16,7 @@ struct FUZZ_dataProducer_s{
 };
 
 FUZZ_dataProducer_t *FUZZ_dataProducer_create(const uint8_t *data, size_t size) {
-    FUZZ_dataProducer_t *producer = malloc(sizeof(FUZZ_dataProducer_t));
-
-    FUZZ_ASSERT(producer != NULL);
+    FUZZ_dataProducer_t *producer = FUZZ_malloc(sizeof(FUZZ_dataProducer_t));
 
     producer->data = data;
     producer->size = size;
@@ -66,6 +64,10 @@ int32_t FUZZ_dataProducer_int32Range(FUZZ_dataProducer_t *producer,
 
 size_t FUZZ_dataProducer_remainingBytes(FUZZ_dataProducer_t *producer){
     return producer->size;
+}
+
+int FUZZ_dataProducer_empty(FUZZ_dataProducer_t *producer) {
+    return producer->size == 0;
 }
 
 size_t FUZZ_dataProducer_contract(FUZZ_dataProducer_t *producer, size_t newSize)

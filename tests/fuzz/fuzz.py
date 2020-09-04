@@ -57,6 +57,10 @@ TARGET_INFO = {
     'zstd_frame_info': TargetInfo(InputType.COMPRESSED_DATA),
     'simple_compress': TargetInfo(InputType.RAW_DATA),
     'dictionary_loader': TargetInfo(InputType.DICTIONARY_DATA),
+    'raw_dictionary_round_trip': TargetInfo(InputType.RAW_DATA),
+    'dictionary_stream_round_trip': TargetInfo(InputType.RAW_DATA),
+    'decompress_dstSize_tooSmall': TargetInfo(InputType.RAW_DATA),
+    'fse_read_ncount': TargetInfo(InputType.RAW_DATA),
 }
 TARGETS = list(TARGET_INFO.keys())
 ALL_TARGETS = TARGETS + ['all']

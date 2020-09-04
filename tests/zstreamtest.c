@@ -641,6 +641,118 @@ static int basicUnitTests(U32 seed, double compressibility)
     }
     DISPLAYLEVEL(3, "OK \n");
 
+    /* Decompression single pass with empty frame */
+    cSize = ZSTD_compress(compressedBuffer, compressedBufferSize, NULL, 0, 1);
+    CHECK_Z(cSize);
+    DISPLAYLEVEL(3, "test%3i : ZSTD_decompressStream() single pass on empty frame : ", testNb++);
+    {   ZSTD_DCtx* dctx = ZSTD_createDCtx();
+        size_t const dctxSize = ZSTD_sizeof_DCtx(dctx);
+        CHECK_Z(ZSTD_DCtx_setParameter(dctx, ZSTD_d_stableOutBuffer, 1));
+
+        outBuff.dst = decodedBuffer;
+        outBuff.pos = 0;
+        outBuff.size = CNBufferSize;
+
+        inBuff.src = compressedBuffer;
+        inBuff.size = cSize;
+        inBuff.pos = 0;
+        {   size_t const r = ZSTD_decompressStream(dctx, &outBuff, &inBuff);
+            CHECK_Z(r);
+            CHECK(r != 0, "Entire frame must be decompressed");
+            CHECK(outBuff.pos != 0, "Wrong size!");
+            CHECK(memcmp(CNBuffer, outBuff.dst, CNBufferSize) != 0, "Corruption!");
+        }
+        CHECK(dctxSize != ZSTD_sizeof_DCtx(dctx), "No buffers allocated");
+        ZSTD_freeDCtx(dctx);
+    }
+    DISPLAYLEVEL(3, "OK \n");
+
+    /* Decompression with ZSTD_d_stableOutBuffer */
+    cSize = ZSTD_compress(compressedBuffer, compressedBufferSize, CNBuffer, CNBufferSize, 1);
+    CHECK_Z(cSize);
+    {   ZSTD_DCtx* dctx = ZSTD_createDCtx();
+        size_t const dctxSize0 = ZSTD_sizeof_DCtx(dctx);        
+        size_t dctxSize1;
+        CHECK_Z(ZSTD_DCtx_setParameter(dctx, ZSTD_d_stableOutBuffer, 1));
+
+        outBuff.dst = decodedBuffer;
+        outBuff.pos = 0;
+        outBuff.size = CNBufferSize;
+
+        DISPLAYLEVEL(3, "test%3i : ZSTD_decompressStream() single pass : ", testNb++);
+        inBuff.src = compressedBuffer;
+        inBuff.size = cSize;
+        inBuff.pos = 0;
+        {   size_t const r = ZSTD_decompressStream(dctx, &outBuff, &inBuff);
+            CHECK_Z(r);
+            CHECK(r != 0, "Entire frame must be decompressed");
+            CHECK(outBuff.pos != CNBufferSize, "Wrong size!");
+            CHECK(memcmp(CNBuffer, outBuff.dst, CNBufferSize) != 0, "Corruption!");
+        }
+        CHECK(dctxSize0 != ZSTD_sizeof_DCtx(dctx), "No buffers allocated");
+        DISPLAYLEVEL(3, "OK \n");
+
+        DISPLAYLEVEL(3, "test%3i : ZSTD_decompressStream() stable out buffer : ", testNb++);
+        outBuff.pos = 0;
+        inBuff.pos = 0;
+        inBuff.size = 0;
+        while (inBuff.pos < cSize) {
+            inBuff.size += MIN(cSize - inBuff.pos, 1 + (FUZ_rand(&coreSeed) & 15));
+            CHECK_Z(ZSTD_decompressStream(dctx, &outBuff, &inBuff));
+        }
+        CHECK(outBuff.pos != CNBufferSize, "Wrong size!");
+        CHECK(memcmp(CNBuffer, outBuff.dst, CNBufferSize) != 0, "Corruption!");
+        dctxSize1 = ZSTD_sizeof_DCtx(dctx);
+        CHECK(!(dctxSize0 < dctxSize1), "Input buffer allocated");
+        DISPLAYLEVEL(3, "OK \n");
+
+        DISPLAYLEVEL(3, "test%3i : ZSTD_decompressStream() stable out buffer too small : ", testNb++);
+        ZSTD_DCtx_reset(dctx, ZSTD_reset_session_only);
+        CHECK_Z(ZSTD_DCtx_setParameter(dctx, ZSTD_d_stableOutBuffer, 1));
+        inBuff.src = compressedBuffer;
+        inBuff.size = cSize;
+        inBuff.pos = 0;
+        outBuff.pos = 0;
+        outBuff.size = CNBufferSize - 1;
+        {   size_t const r = ZSTD_decompressStream(dctx, &outBuff, &inBuff);
+            CHECK(ZSTD_getErrorCode(r) != ZSTD_error_dstSize_tooSmall, "Must error but got %s", ZSTD_getErrorName(r));
+        }
+        DISPLAYLEVEL(3, "OK \n");
+
+        DISPLAYLEVEL(3, "test%3i : ZSTD_decompressStream() stable out buffer modified : ", testNb++);
+        ZSTD_DCtx_reset(dctx, ZSTD_reset_session_only);
+        CHECK_Z(ZSTD_DCtx_setParameter(dctx, ZSTD_d_stableOutBuffer, 1));
+        inBuff.src = compressedBuffer;
+        inBuff.size = cSize - 1;
+        inBuff.pos = 0;
+        outBuff.pos = 0;
+        outBuff.size = CNBufferSize;
+        CHECK_Z(ZSTD_decompressStream(dctx, &outBuff, &inBuff));
+        ++inBuff.size;
+        outBuff.pos = 0;
+        {   size_t const r = ZSTD_decompressStream(dctx, &outBuff, &inBuff);
+            CHECK(ZSTD_getErrorCode(r) != ZSTD_error_dstBuffer_wrong, "Must error but got %s", ZSTD_getErrorName(r));
+        }
+        DISPLAYLEVEL(3, "OK \n");
+        
+        DISPLAYLEVEL(3, "test%3i : ZSTD_decompressStream() buffered output : ", testNb++);
+        ZSTD_DCtx_reset(dctx, ZSTD_reset_session_only);
+        CHECK_Z(ZSTD_DCtx_setParameter(dctx, ZSTD_d_stableOutBuffer, 0));
+        outBuff.pos = 0;
+        inBuff.pos = 0;
+        inBuff.size = 0;
+        while (inBuff.pos < cSize) {
+            inBuff.size += MIN(cSize - inBuff.pos, 1 + (FUZ_rand(&coreSeed) & 15));
+            CHECK_Z(ZSTD_decompressStream(dctx, &outBuff, &inBuff));
+        }
+        CHECK(outBuff.pos != CNBufferSize, "Wrong size!");
+        CHECK(memcmp(CNBuffer, outBuff.dst, CNBufferSize) != 0, "Corruption!");
+        CHECK(!(dctxSize1 < ZSTD_sizeof_DCtx(dctx)), "Output buffer allocated");
+        DISPLAYLEVEL(3, "OK \n");
+
+        ZSTD_freeDCtx(dctx);
+    }
+
     /* CDict scenario */
     DISPLAYLEVEL(3, "test%3i : digested dictionary : ", testNb++);
     {   ZSTD_CDict* const cdict = ZSTD_createCDict(dictionary.start, dictionary.filled, 1 /*byRef*/ );
@@ -1340,12 +1452,12 @@ static int basicUnitTests(U32 seed, double compressibility)
 
         /* and includes a very long backref */
         cursegmentlen = 128;
-        memcpy(inbuf + inbufpos, dictionary.start + 256, cursegmentlen);
+        memcpy(inbuf + inbufpos, (BYTE*)dictionary.start + 256, cursegmentlen);
         inbufpos += cursegmentlen;
 
         /* and includes a very long backref */
         cursegmentlen = 128;
-        memcpy(inbuf + inbufpos, dictionary.start + 128, cursegmentlen);
+        memcpy(inbuf + inbufpos, (BYTE*)dictionary.start + 128, cursegmentlen);
         inbufpos += cursegmentlen;
 
         ret = ZSTD_compress_usingCDict(zc, outbuf, outbufsize, inbuf, inbufpos, cdict);
@@ -1388,7 +1500,7 @@ static int basicUnitTests(U32 seed, double compressibility)
         }
         /* Write several very long offset matches into the dictionary */
         for (offset = 1024; offset >= 0; offset -= 128) {
-          ZSTD_inBuffer in = {dictionary.start + offset, 128, 0};
+          ZSTD_inBuffer in = {(BYTE*)dictionary.start + offset, 128, 0};
           ZSTD_EndDirective flush = offset > 0 ? ZSTD_e_continue : ZSTD_e_end;
           CHECK_Z(ZSTD_compressStream2(zc, &out, &in, flush));
           CHECK(in.pos != in.size, "input not fully consumed");

@@ -21,7 +21,7 @@ extern "C" {
 /* ****************************************
 *  Dependencies
 ******************************************/
-#include <stddef.h>        /* size_t */
+#include "zstd_deps.h"    /* size_t */
 #include "zstd_errors.h"  /* enum list */
 
 
@@ -49,7 +49,7 @@ typedef ZSTD_ErrorCode ERR_enum;
 /*-****************************************
 *  Error codes handling
 ******************************************/
-#undef ERROR   /* reported already defined on VS 2015 (Rich Geldreich) */
+#undef ERROR   /* already defined on Visual Studio */
 #define ERROR(name) ZSTD_ERROR(name)
 #define ZSTD_ERROR(name) ((size_t)-PREFIX(name))
 

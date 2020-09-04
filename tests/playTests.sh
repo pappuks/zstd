@@ -8,22 +8,22 @@ die() {
 }
 
 datagen() {
-    "$DATAGEN_BIN" $@
+    "$DATAGEN_BIN" "$@"
 }
 
 zstd() {
     if [ -z "$EXEC_PREFIX" ]; then
-        "$ZSTD_BIN" $@
+        "$ZSTD_BIN" "$@"
     else
-        "$EXEC_PREFIX" "$ZSTD_BIN" $@
+        "$EXEC_PREFIX" "$ZSTD_BIN" "$@"
     fi
 }
 
 sudoZstd() {
     if [ -z "$EXEC_PREFIX" ]; then
-        sudo "$ZSTD_BIN" $@
+        sudo "$ZSTD_BIN" "$@"
     else
-        sudo "$EXEC_PREFIX" "$ZSTD_BIN" $@
+        sudo "$EXEC_PREFIX" "$ZSTD_BIN" "$@"
     fi
 }
 
@@ -78,6 +78,11 @@ println() {
     printf '%b\n' "${*}"
 }
 
+if [ -z "${size}" ]; then
+    size=
+else
+    size=${size}
+fi
 
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
 PRGDIR="$SCRIPT_DIR/../programs"
@@ -123,10 +128,25 @@ case "$UNAME" in
   SunOS) DIFF="gdiff" ;;
 esac
 
-println "\nStarting playTests.sh isWindows=$isWindows EXE_PREFIX='$EXE_PREFIX' ZSTD_BIN='$ZSTD_BIN'"
 
-[ -n "$ZSTD_BIN" ] || die "$ZSTD_BIN variable must be defined!"
-[ -n "$DATAGEN_BIN" ] || die "$DATAGEN_BIN variable must be defined!"
+# check if ZSTD_BIN is defined. if not, use the default value
+if [ -z "${ZSTD_BIN}" ]; then
+  println "\nZSTD_BIN is not set. Using the default value..."
+  ZSTD_BIN="$PRGDIR/zstd"
+fi
+
+# check if DATAGEN_BIN is defined. if not, use the default value
+if [ -z "${DATAGEN_BIN}" ]; then
+  println "\nDATAGEN_BIN is not set. Using the default value..."
+  DATAGEN_BIN="$TESTDIR/datagen"
+fi
+
+ZSTD_BIN="$EXE_PREFIX$ZSTD_BIN"
+
+# assertions
+[ -n "$ZSTD_BIN" ] || die "zstd not found at $ZSTD_BIN! \n Please define ZSTD_BIN pointing to the zstd binary. You might also consider rebuilding zstd follwing the instructions in README.md"
+[ -n "$DATAGEN_BIN" ] || die "datagen not found at $DATAGEN_BIN! \n Please define DATAGEN_BIN pointing to the datagen binary. You might also consider rebuilding zstd tests following the instructions in README.md. "
+println "\nStarting playTests.sh isWindows=$isWindows EXE_PREFIX='$EXE_PREFIX' ZSTD_BIN='$ZSTD_BIN' DATAGEN_BIN='$DATAGEN_BIN'"
 
 if echo hello | zstd -v -T2 2>&1 > $INTOVOID | grep -q 'multi-threading is disabled'
 then
@@ -174,8 +194,6 @@ println "test : compress to named file"
 rm tmpCompressed
 zstd tmp -o tmpCompressed
 test -f tmpCompressed   # file must be created
-println "test : -o must be followed by filename (must fail)"
-zstd tmp -of tmpCompressed && die "-o must be followed by filename "
 println "test : force write, correct order"
 zstd tmp -fo tmpCompressed
 println "test : forgotten argument"
@@ -242,6 +260,13 @@ zstd tmp -c --compress-literals    --fast=1 | zstd -t
 zstd tmp -c --compress-literals    -19      | zstd -t
 zstd -b --fast=1 -i0e1 tmp --compress-literals
 zstd -b --fast=1 -i0e1 tmp --no-compress-literals
+println "test: --no-check for decompression"
+zstd -f tmp -o tmp_corrupt.zst --check
+zstd -f tmp -o tmp.zst --no-check
+printf '\xDE\xAD\xBE\xEF' | dd of=tmp_corrupt.zst bs=1 seek=$(($(wc -c < "tmp_corrupt.zst") - 4)) count=4 conv=notrunc # corrupt checksum in tmp
+zstd -d -f tmp_corrupt.zst --no-check
+zstd -d -f tmp_corrupt.zst --check --no-check # final flag overrides
+zstd -d -f tmp.zst --no-check
 
 println "\n===> zstdgrep tests"
 ln -sf "$ZSTD_BIN" zstdcat
@@ -267,7 +292,7 @@ test ! -f precompressedFilterTestDir/input.5.zst.zst
 test ! -f precompressedFilterTestDir/input.6.zst.zst
 file1timestamp=`$MTIME precompressedFilterTestDir/input.5.zst`
 file2timestamp=`$MTIME precompressedFilterTestDir/input.7.zst`
-if [[ $file2timestamp -ge $file1timestamp ]]; then
+if [ $file2timestamp -ge $file1timestamp ]; then
   println "Test is successful. input.5.zst is precompressed and therefore not compressed/modified again."
 else
   println "Test is not successful"
@@ -343,7 +368,23 @@ zstd tmp1.zst tmp2.zst -o "$INTOVOID" -f
 zstd -d tmp1.zst tmp2.zst -o tmp
 touch tmpexists
 zstd tmp1 tmp2 -f -o tmpexists
-zstd tmp1 tmp2 -o tmpexists && die "should have refused to overwrite"
+zstd tmp1 tmp2 -q -o tmpexists && die "should have refused to overwrite"
+println gooder > tmp_rm1
+println boi > tmp_rm2
+println worldly > tmp_rm3
+echo 'y' | zstd tmp_rm1 tmp_rm2 -o tmp_rm3.zst --rm     # tests the warning prompt for --rm with multiple inputs into once source
+test ! -f tmp_rm1
+test ! -f tmp_rm2
+cp tmp_rm3.zst tmp_rm4.zst
+echo 'Y' | zstd -d tmp_rm3.zst tmp_rm4.zst -o tmp_rm_out --rm
+test ! -f tmp_rm3.zst
+test ! -f tmp_rm4.zst
+echo 'yes' | zstd tmp_rm_out tmp_rm3 -c --rm
+test ! -f tmp_rm_out
+test ! -f tmp_rm3
+println gooder > tmpexists1
+zstd tmpexists1 tmpexists -c --rm -f
+
 # Bug: PR #972
 if [ "$?" -eq 139 ]; then
   die "should not have segfaulted"
@@ -425,6 +466,31 @@ test -f tmpOutDirDecomp/tmp2
 test -f tmpOutDirDecomp/tmp1
 rm -rf tmp*
 
+if [ "$isWindows" = false ] ; then
+    println "\n===>  compress multiple files into an output directory and mirror input folder, --output-dir-mirror"
+    println "test --output-dir-mirror" > tmp1
+    mkdir -p tmpInputTestDir/we/must/go/deeper
+    println cool > tmpInputTestDir/we/must/go/deeper/tmp2
+    zstd tmp1 -r tmpInputTestDir --output-dir-mirror tmpOutDir
+    test -f tmpOutDir/tmp1.zst
+    test -f tmpOutDir/tmpInputTestDir/we/must/go/deeper/tmp2.zst
+
+    println "test: compress input dir will be ignored if it has '..'"
+    zstd  -r tmpInputTestDir/we/must/../must --output-dir-mirror non-exist && die "input cannot contain '..'"
+    test ! -d non-exist
+
+    println "test : decompress multiple files into an output directory, --output-dir-mirror"
+    zstd tmpOutDir -r -d --output-dir-mirror tmpOutDirDecomp
+    test -f tmpOutDirDecomp/tmpOutDir/tmp1
+    test -f tmpOutDirDecomp/tmpOutDir/tmpInputTestDir/we/must/go/deeper/tmp2
+
+    println "test: decompress input dir will be ignored if it has '..'"
+    zstd  -r tmpOutDir/tmpInputTestDir/we/must/../must --output-dir-mirror non-exist && die "input cannot contain '..'"
+    test ! -d non-exist
+
+    rm -rf tmp*
+fi
+
 
 println "test : compress multiple files reading them from a file, --filelist=FILE"
 println "Hello world!, file1" > tmp1
@@ -432,6 +498,11 @@ println "Hello world!, file2" > tmp2
 println tmp1 > tmp_fileList
 println tmp2 >> tmp_fileList
 zstd -f --filelist=tmp_fileList
+test -f tmp2.zst
+test -f tmp1.zst
+
+println "test : alternate syntax: --filelist FILE"
+zstd -f --filelist tmp_fileList
 test -f tmp2.zst
 test -f tmp1.zst
 
@@ -641,7 +712,7 @@ if [ "$stream_size" -gt "$file_size" ]; then
   die "hinted compression larger than expected"
 fi
 println "test : sized streaming compression and decompression"
-cat tmp | zstd -14 -f tmp -o --stream-size=11000 tmp.zst
+cat tmp | zstd -14 -f tmp -o tmp.zst --stream-size=11000
 zstd -df tmp.zst -o tmp_decompress
 cmp tmp tmp_decompress || die "difference between original and decompressed file"
 println "test : incorrect stream size"
@@ -738,8 +809,6 @@ println "- Compress without dictID"
 zstd -f tmp -D tmpDict1 --no-dictID
 zstd -d tmp.zst -D tmpDict -fo result
 $DIFF "$TESTFILE" result
-println "- Compress with wrong argument order (must fail)"
-zstd tmp -Df tmpDict1 -c > $INTOVOID && die "-D must be followed by dictionary name "
 println "- Compress multiple files with dictionary"
 rm -rf dirTestDict
 mkdir dirTestDict
@@ -873,8 +942,9 @@ datagen | zstd -c | zstd -t
 
 println "\n===>  golden files tests "
 
-zstd -t -r "$TESTDIR/golden-compression"
+zstd -t -r "$TESTDIR/golden-decompression"
 zstd -c -r "$TESTDIR/golden-compression" | zstd -t
+zstd -D "$TESTDIR/golden-dictionaries/http-dict-missing-symbols" "$TESTDIR/golden-compression/http" -c | zstd -D "$TESTDIR/golden-dictionaries/http-dict-missing-symbols" -t
 
 
 println "\n===>  benchmark mode tests "
@@ -1258,17 +1328,20 @@ then
     zstd -f -vv --rsyncable --single-thread tmp && die "--rsyncable must fail with --single-thread"
 fi
 
-println "\n===> patch-from tests"
-
+println "\n===> patch-from=origin tests"
 datagen -g1000 -P50 > tmp_dict
 datagen -g1000 -P10 > tmp_patch
 zstd --patch-from=tmp_dict tmp_patch -o tmp_patch_diff
 zstd -d --patch-from=tmp_dict tmp_patch_diff -o tmp_patch_recon
 $DIFF -s tmp_patch_recon tmp_patch
+
+println "\n===> alternate syntax: patch-from origin"
+zstd -f --patch-from tmp_dict tmp_patch -o tmp_patch_diff
+zstd -df --patch-from tmp_dict tmp_patch_diff -o tmp_patch_recon
+$DIFF -s tmp_patch_recon tmp_patch
 rm -rf tmp_*
 
 println "\n===> patch-from recursive tests"
-
 mkdir tmp_dir
 datagen > tmp_dir/tmp1
 datagen > tmp_dir/tmp2
@@ -1277,10 +1350,16 @@ zstd --patch-from=tmp_dict -r tmp_dir && die
 rm -rf tmp*
 
 println "\n===> patch-from long mode trigger larger file test"
-
 datagen -g5000000 > tmp_dict
 datagen -g5000000 > tmp_patch
-zstd -15 --patch-from=tmp_dict tmp_patch 2>&1 | grep "long mode automaticaly triggered"
+zstd -15 --patch-from=tmp_dict tmp_patch 2>&1 | grep "long mode automatically triggered"
+rm -rf tmp*
+
+println "\n===> patch-from --stream-size test"
+datagen -g1000 -P50 > tmp_dict
+datagen -g1000 -P10 > tmp_patch
+cat tmp_patch | zstd -f --patch-from=tmp_dict -c -o tmp_patch_diff && die
+cat tmp_patch | zstd -f --patch-from=tmp_dict --stream-size=1000 -c -o tmp_patch_diff
 rm -rf tmp*
 
 println "\n===>   large files tests "

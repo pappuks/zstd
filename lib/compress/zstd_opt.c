@@ -569,7 +569,10 @@ U32 ZSTD_insertBtAndGetAllMatches (
             U32 repLen = 0;
             assert(current >= dictLimit);
             if (repOffset-1 /* intentional overflow, discards 0 and -1 */ < current-dictLimit) {  /* equivalent to `current > repIndex >= dictLimit` */
-                if (ZSTD_readMINMATCH(ip, minMatch) == ZSTD_readMINMATCH(ip - repOffset, minMatch)) {
+                /* We must validate the repcode offset because when we're using a dictionary the
+                 * valid offset range shrinks when the dictionary goes out of bounds.
+                 */
+                if ((repIndex >= windowLow) & (ZSTD_readMINMATCH(ip, minMatch) == ZSTD_readMINMATCH(ip - repOffset, minMatch))) {
                     repLen = (U32)ZSTD_count(ip+minMatch, ip+minMatch-repOffset, iLimit) + minMatch;
                 }
             } else {  /* repIndex < dictLimit || repIndex >= current */
@@ -765,30 +768,6 @@ FORCE_INLINE_TEMPLATE U32 ZSTD_BtGetAllMatches (
 /*-*******************************
 *  Optimal parser
 *********************************/
-typedef struct repcodes_s {
-    U32 rep[3];
-} repcodes_t;
-
-static repcodes_t ZSTD_updateRep(U32 const rep[3], U32 const offset, U32 const ll0)
-{
-    repcodes_t newReps;
-    if (offset >= ZSTD_REP_NUM) {  /* full offset */
-        newReps.rep[2] = rep[1];
-        newReps.rep[1] = rep[0];
-        newReps.rep[0] = offset - ZSTD_REP_MOVE;
-    } else {   /* repcode */
-        U32 const repCode = offset + ll0;
-        if (repCode > 0) {  /* note : if repCode==0, no change */
-            U32 const currentOffset = (repCode==ZSTD_REP_NUM) ? (rep[0] - 1) : rep[repCode];
-            newReps.rep[2] = (repCode >= 2) ? rep[1] : rep[2];
-            newReps.rep[1] = rep[0];
-            newReps.rep[0] = currentOffset;
-        } else {   /* repCode == 0 */
-            memcpy(&newReps, rep, sizeof(newReps));
-        }
-    }
-    return newReps;
-}
 
 
 static U32 ZSTD_totalLen(ZSTD_optimal_t sol)
@@ -805,7 +784,7 @@ listStats(const U32* table, int lastEltID)
     int enb;
     for (enb=0; enb < nbElts; enb++) {
         (void)table;
-        //RAWLOG(2, "%3i:%3i,  ", enb, table[enb]);
+        /* RAWLOG(2, "%3i:%3i,  ", enb, table[enb]); */
         RAWLOG(2, "%4i,", table[enb]);
     }
     RAWLOG(2, " \n");
@@ -946,9 +925,9 @@ ZSTD_compressBlock_opt_generic(ZSTD_matchState_t* ms,
             if (opt[cur].mlen != 0) {
                 U32 const prev = cur - opt[cur].mlen;
                 repcodes_t newReps = ZSTD_updateRep(opt[prev].rep, opt[cur].off, opt[cur].litlen==0);
-                memcpy(opt[cur].rep, &newReps, sizeof(repcodes_t));
+                ZSTD_memcpy(opt[cur].rep, &newReps, sizeof(repcodes_t));
             } else {
-                memcpy(opt[cur].rep, opt[cur - 1].rep, sizeof(repcodes_t));
+                ZSTD_memcpy(opt[cur].rep, opt[cur - 1].rep, sizeof(repcodes_t));
             }
 
             /* last match must start at a minimum distance of 8 from oend */
@@ -1031,9 +1010,9 @@ _shortestPath:   /* cur, last_pos, best_mlen, best_off have to be set */
          */
         if (lastSequence.mlen != 0) {
             repcodes_t reps = ZSTD_updateRep(opt[cur].rep, lastSequence.off, lastSequence.litlen==0);
-            memcpy(rep, &reps, sizeof(reps));
+            ZSTD_memcpy(rep, &reps, sizeof(reps));
         } else {
-            memcpy(rep, opt[cur].rep, sizeof(repcodes_t));
+            ZSTD_memcpy(rep, opt[cur].rep, sizeof(repcodes_t));
         }
 
         {   U32 const storeEnd = cur + 1;
@@ -1131,7 +1110,7 @@ ZSTD_initStats_ultra(ZSTD_matchState_t* ms,
                const void* src, size_t srcSize)
 {
     U32 tmpRep[ZSTD_REP_NUM];  /* updated rep codes will sink here */
-    memcpy(tmpRep, rep, sizeof(tmpRep));
+    ZSTD_memcpy(tmpRep, rep, sizeof(tmpRep));
 
     DEBUGLOG(4, "ZSTD_initStats_ultra (srcSize=%zu)", srcSize);
     assert(ms->opt.litLengthSum == 0);    /* first block */

@@ -11,7 +11,7 @@
 
 #include <stddef.h>    /* size_t, ptrdiff_t */
 #include "zstd_v02.h"
-#include "error_private.h"
+#include "../common/error_private.h"
 
 
 /******************************************
@@ -189,7 +189,7 @@ MEM_STATIC void MEM_write16(void* memPtr, U16 value)
     memcpy(memPtr, &value, sizeof(value));
 }
 
-#endif // MEM_FORCE_MEMORY_ACCESS
+#endif /* MEM_FORCE_MEMORY_ACCESS */
 
 
 MEM_STATIC U16 MEM_readLE16(const void* memPtr)
@@ -2836,7 +2836,9 @@ static size_t ZSTD_getcBlockSize(const void* src, size_t srcSize, blockPropertie
 static size_t ZSTD_copyUncompressedBlock(void* dst, size_t maxDstSize, const void* src, size_t srcSize)
 {
     if (srcSize > maxDstSize) return ERROR(dstSize_tooSmall);
-    memcpy(dst, src, srcSize);
+    if (srcSize > 0) {
+        memcpy(dst, src, srcSize);
+    }
     return srcSize;
 }
 
@@ -3229,8 +3231,10 @@ static size_t ZSTD_decompressSequences(
             size_t lastLLSize = litEnd - litPtr;
             if (litPtr > litEnd) return ERROR(corruption_detected);
             if (op+lastLLSize > oend) return ERROR(dstSize_tooSmall);
-            if (op != litPtr) memmove(op, litPtr, lastLLSize);
-            op += lastLLSize;
+            if (lastLLSize > 0) {
+                if (op != litPtr) memmove(op, litPtr, lastLLSize);
+                op += lastLLSize;
+            }
         }
     }
 

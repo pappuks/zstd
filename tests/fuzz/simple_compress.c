@@ -19,6 +19,7 @@
 #include <stdio.h>
 #include "fuzz_helpers.h"
 #include "zstd.h"
+#include "zstd_errors.h"
 #include "zstd_helpers.h"
 #include "fuzz_data_producer.h"
 
@@ -41,9 +42,11 @@ int LLVMFuzzerTestOneInput(const uint8_t *src, size_t size)
         FUZZ_ASSERT(cctx);
     }
 
-    void *rBuf = malloc(bufSize);
-    FUZZ_ASSERT(rBuf);
-    ZSTD_compressCCtx(cctx, rBuf, bufSize, src, size, cLevel);
+    void *rBuf = FUZZ_malloc(bufSize);
+    size_t const ret = ZSTD_compressCCtx(cctx, rBuf, bufSize, src, size, cLevel);
+    if (ZSTD_isError(ret)) {
+        FUZZ_ASSERT(ZSTD_getErrorCode(ret) == ZSTD_error_dstSize_tooSmall);
+    }
     free(rBuf);
     FUZZ_dataProducer_free(producer);
 #ifndef STATEFUL_FUZZING

@@ -4,7 +4,7 @@
  *
  * Generate using:
  * \code
- *	combine.sh -r ../../lib -r ../../lib/common -r ../../lib/decompress -o zstddeclib.c zstddeclib-in.c
+ *	combine.sh -r ../../lib -o zstddeclib.c zstddeclib-in.c
  * \endcode
  */
 /*
@@ -37,20 +37,19 @@
 #undef  XXH_INLINE_ALL
 #define XXH_INLINE_ALL
 #define ZSTD_LEGACY_SUPPORT 0
-#define ZSTD_LIB_COMPRESSION 0
-#define ZSTD_LIB_DEPRECATED 0
-#define ZSTD_NOBENCH
 #define ZSTD_STRIP_ERROR_STRINGS
 
-/* lib/common */
-#include "debug.c"
-#include "entropy_common.c"
-#include "error_private.c"
-#include "fse_decompress.c"
-#include "zstd_common.c"
+/* Include zstd_deps.h first with all the options we need enabled. */
+#define ZSTD_DEPS_NEED_MALLOC
+#include "common/zstd_deps.h"
 
-/* lib/decompress */
-#include "huf_decompress.c"
-#include "zstd_ddict.c"
-#include "zstd_decompress.c"
-#include "zstd_decompress_block.c"
+#include "common/debug.c"
+#include "common/entropy_common.c"
+#include "common/error_private.c"
+#include "common/fse_decompress.c"
+#include "common/zstd_common.c"
+
+#include "decompress/huf_decompress.c"
+#include "decompress/zstd_ddict.c"
+#include "decompress/zstd_decompress.c"
+#include "decompress/zstd_decompress_block.c"
